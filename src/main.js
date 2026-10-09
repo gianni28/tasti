@@ -591,7 +591,7 @@ function quit() {
 let remapIndex = -1; // tecla que se está cambiando en Ajustes (0-7 carriles, 8 pedal)
 window.addEventListener("keydown", (e) => {
   if (remapIndex >= 0) { e.preventDefault(); assignKey(e.code); return; }
-  if (calib.on) { calibTap(); return; }
+  if (calib.on) { if (!e.repeat) calibTap(); return; }
   if (e.repeat) return;
   if ($("play").classList.contains("hidden")) return;
   if (e.code === "Escape") { e.preventDefault(); if (app.running) pause(!app.paused); return; }
@@ -729,36 +729,59 @@ $("settingsBtn").onclick = openSettings;
 $("settingsClose").onclick = () => { remapIndex = -1; $("settings").classList.add("hidden"); };
 $("adminBtn").onclick = () => { $("settings").classList.add("hidden"); openAdmin(adminHooks); };
 
-/* ---------- calibración: tocar al ritmo del metrónomo ---------- */
-const calib = { on: false, clicks: [], taps: [] };
+/* ---------- calibración: primero suena un compás, después se toca encima ---------- */
+// Un compás de 4 golpes para agarrar el pulso (solo se escucha) y después 8 golpes más sobre los que se toca.
+const CAL_BEAT = 0.6; // 100 pulsos por minuto
+const CAL_LISTEN = 4, CAL_TAPS = 8;
+const calib = { on: false, clicks: [], taps: [], tapFrom: 0, raf: 0 };
+const calibIntro = "Primero suena un compás para que agarres el pulso. Después sigue sonando: pulsa cualquier tecla (o toca la pantalla) con cada golpe.";
 $("calibrateBtn").onclick = () => {
   $("calib").classList.remove("hidden");
-  $("calibText").textContent = "Pulsa cualquier tecla (o toca la pantalla) cada vez que suene el metrónomo. Son 8 golpes.";
+  $("calibText").textContent = calibIntro;
   $("calibDots").innerHTML = "";
   $("calibStart").classList.remove("hidden");
 };
 $("calibStart").onclick = () => {
   unlockAudio();
   const ctx = audioCtx();
-  const t0 = ctx.currentTime + 1;
-  calib.clicks = Array.from({ length: 8 }, (_, i) => t0 + i * 0.6);
+  const t0 = ctx.currentTime + 0.8;
+  const all = Array.from({ length: CAL_LISTEN + CAL_TAPS }, (_, i) => t0 + i * CAL_BEAT);
+  all.forEach((t, i) => playClick(t, i % 4 === 0));
+  calib.clicks = all.slice(CAL_LISTEN); // solo cuentan los golpes del segundo y tercer compás
+  calib.tapFrom = calib.clicks[0] - CAL_BEAT / 2;
   calib.taps = [];
-  calib.clicks.forEach((t, i) => playClick(t, i % 4 === 0));
   calib.on = true;
   $("calibStart").classList.add("hidden");
-  $("calibDots").innerHTML = calib.clicks.map(() => "<span></span>").join("");
-  setTimeout(endCalib, 1000 + 8 * 600 + 700);
+  $("calibText").textContent = "Escucha el compás…";
+  $("calibDots").innerHTML =
+    `<div class="row listen">${"<span></span>".repeat(CAL_LISTEN)}</div><div class="row taps">${"<span></span>".repeat(CAL_TAPS)}</div>`;
+  const listenDots = $("calibDots").querySelectorAll(".listen span");
+  const tick = () => {
+    if (!calib.on) return;
+    const now = ctx.currentTime - (ctx.outputLatency || ctx.baseLatency || 0);
+    all.slice(0, CAL_LISTEN).forEach((t, i) => listenDots[i].classList.toggle("on", now >= t));
+    if (now >= calib.tapFrom && !$("calibDots").classList.contains("go")) {
+      $("calibDots").classList.add("go");
+      $("calibText").textContent = "¡Ahora! Toca con cada golpe.";
+    }
+    calib.raf = requestAnimationFrame(tick);
+  };
+  $("calibDots").classList.remove("go");
+  tick();
+  setTimeout(endCalib, (all[all.length - 1] - ctx.currentTime + 0.6) * 1000);
 };
 function calibTap() {
   const c = audioCtx();
   const t = c.currentTime - (c.outputLatency || c.baseLatency || 0);
+  if (t < calib.tapFrom) return; // durante el compás de entrada solo se escucha
   calib.taps.push(t);
-  const dots = $("calibDots").children;
+  const dots = $("calibDots").querySelectorAll(".taps span");
   if (dots[calib.taps.length - 1]) dots[calib.taps.length - 1].classList.add("on");
 }
 $("calib").addEventListener("pointerdown", (e) => { if (calib.on && e.target.tagName !== "BUTTON") calibTap(); });
 function endCalib() {
   calib.on = false;
+  cancelAnimationFrame(calib.raf);
   const offsets = calib.taps
     .map((t) => {
       const near = calib.clicks.reduce((a, b) => (Math.abs(b - t) < Math.abs(a - t) ? b : a));
@@ -766,9 +789,10 @@ function endCalib() {
     })
     .filter((d) => Math.abs(d) < 0.25)
     .sort((a, b) => a - b);
+  $("calibStart").textContent = "Otra vez";
+  $("calibStart").classList.remove("hidden");
   if (offsets.length < 5) {
-    $("calibText").textContent = "No alcancé a medir bien. Intenta otra vez, pulsando con cada golpe.";
-    $("calibStart").classList.remove("hidden");
+    $("calibText").textContent = "No alcancé a medir bien. Intenta otra vez: escucha el compás y después toca con cada golpe.";
     return;
   }
   const median = offsets[Math.floor(offsets.length / 2)];
@@ -776,9 +800,9 @@ function endCalib() {
   saveSettings(settings);
   $("setLatency").value = settings.latency;
   $("setLatencyVal").textContent = latencyText();
-  $("calibText").textContent = settings.latency === 0 ? "Vas perfectamente a tiempo: no hace falta corregir nada." : `Listo: corregí ${Math.abs(settings.latency)} ms (pulsabas ${settings.latency > 0 ? "un poco tarde" : "un poco antes"}).`;
+  $("calibText").textContent = settings.latency === 0 ? "Vas perfectamente a tiempo: no hace falta corregir nada." : `Listo: corregí ${Math.abs(settings.latency)} ms (tocabas ${settings.latency > 0 ? "un poco tarde" : "un poco antes"}).`;
 }
-$("calibClose").onclick = () => { calib.on = false; $("calib").classList.add("hidden"); };
+$("calibClose").onclick = () => { calib.on = false; cancelAnimationFrame(calib.raf); stopAll(); $("calibStart").textContent = "Empezar"; $("calib").classList.add("hidden"); };
 
 /* ================= admin ================= */
 const adminHooks = {
