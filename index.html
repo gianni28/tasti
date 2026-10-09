@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#1a070b" />
+  <meta name="description" content="Tasti: toca los clásicos del piano con ocho dedos." />
+  <title>Tasti</title>
+</head>
+<body>
+  <!-- Menú: el programa de la velada -->
+  <section id="menu" class="screen">
+    <div class="curtain left" aria-hidden="true"></div>
+    <div class="curtain right" aria-hidden="true"></div>
+    <div class="valance" aria-hidden="true"></div>
+
+    <div class="menu-wrap">
+      <header class="brand">
+        <div class="kicker">Teatro de ocho dedos</div>
+        <h1 class="logo">Tasti</h1>
+        <div class="tagline">Toca los clásicos con ocho dedos</div>
+      </header>
+
+      <div class="menu-body">
+        <div class="program">
+          <div class="program-inner">
+            <div class="program-head">
+              <div class="small-caps red">Gran velada de piano</div>
+              <h2>Programa</h2>
+            </div>
+            <ol id="songList" class="songs"></ol>
+            <label class="load-midi">
+              <input id="midiFile" type="file" accept=".mid,.midi,audio/midi" />
+              <span>+ Cargar un MIDI propio</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="stand">
+          <div class="small-caps gold">En el atril</div>
+          <div id="selTitle" class="sel-title">—</div>
+          <div id="selComposer" class="sel-composer"></div>
+          <p id="selQuip" class="quip"></p>
+          <div class="small-caps gold" style="margin-top: 14px">Dificultad</div>
+          <div id="diffs" class="diffs" role="radiogroup" aria-label="Dificultad"></div>
+          <div id="diffBlurb" class="blurb"></div>
+          <div id="diffStats" class="blurb dim"></div>
+          <button id="playBtn" class="btn-gold">Tocar</button>
+          <div class="keys-hint" id="keysHint">Teclas: <b>A S D F</b> mano izquierda · <b>J K L Ñ</b> mano derecha · <b>Espacio</b> pedal · <b>Esc</b> pausa</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Partida -->
+  <section id="play" class="screen hidden">
+    <canvas id="stage"></canvas>
+    <div class="hud left plaque">
+      <div class="small-caps gold" id="hudPiece">—</div>
+      <div class="progress"><div id="hudProgress"></div></div>
+      <div class="small-caps gold mt">Puntaje</div>
+      <div class="big" id="hudScore">0</div>
+      <div class="combo-row">
+        <div class="big gold-text" id="hudCombo">×0</div>
+        <div class="mult" id="hudMult">×1</div>
+      </div>
+      <div class="small-caps gold">Combo</div>
+    </div>
+    <div class="hud right plaque">
+      <div class="small-caps gold">Precisión</div>
+      <div class="big" id="hudAcc">100%</div>
+      <div class="small-caps gold mt">Pedal</div>
+      <div class="meter"><div id="hudPedal"></div></div>
+      <div class="hint" id="hudPedalHint">Espacio cuando pase la mitad</div>
+    </div>
+    <button id="pauseBtn" class="pause-btn" aria-label="Pausa">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="3" stroke-linecap="round" /></svg>
+    </button>
+  </section>
+
+  <!-- Pausa -->
+  <div id="pause" class="overlay hidden">
+    <div class="card">
+      <h2>Intermedio</h2>
+      <button id="resumeBtn" class="btn-gold">Continuar</button>
+      <button id="restartBtn" class="btn-line">Empezar de nuevo</button>
+      <button id="quitBtn" class="btn-line">Volver al programa</button>
+    </div>
+  </div>
+
+  <!-- Cargando -->
+  <div id="loading" class="overlay hidden">
+    <div class="card">
+      <h2 id="loadingText">Afinando el piano…</h2>
+      <div class="progress wide"><div id="loadingBar"></div></div>
+    </div>
+  </div>
+
+  <!-- Reseña del crítico -->
+  <div id="results" class="overlay hidden">
+    <div class="results">
+      <article class="paper">
+        <header>
+          <div class="paper-name">El Crítico</div>
+          <div id="resSub" class="paper-sub"></div>
+        </header>
+        <h2 id="resTitle"></h2>
+        <div id="resStars" class="stars" aria-label=""></div>
+        <p id="resText" class="paper-text"></p>
+      </article>
+      <div class="stats plaque">
+        <div class="small-caps gold">Tu actuación</div>
+        <div class="big gold-text" id="resScore">0</div>
+        <div id="resRecord" class="record hidden">Récord personal</div>
+        <dl id="resList"></dl>
+        <button id="againBtn" class="btn-gold">Tocar de nuevo</button>
+        <button id="backBtn" class="btn-line">Otra pieza</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="rotate" class="overlay rotate">
+    <div class="card">
+      <h2>Gira el celular</h2>
+      <p>Tasti se toca en horizontal, con el teléfono apoyado.</p>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

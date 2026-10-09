@@ -1,0 +1,22 @@
+{
+  "name": "tasti",
+  "version": "0.1.0",
+  "description": "Tasti — juego de ritmo de piano con clásicos de dominio público",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "make-bach": "node scripts/make-bach.mjs",
+    "check": "node scripts/check-chart.mjs"
+  },
+  "dependencies": {
+    "@fontsource/cormorant-garamond": "^5.3.0",
+    "@fontsource/playfair-display": "^5.3.0",
+    "@tonejs/midi": "^2.0.28"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  },
+  "private": true,
+  "type": "module"
+}
