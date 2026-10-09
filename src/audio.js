@@ -183,3 +183,88 @@ export function stopAll() {
 }
 
 export const isSynth = () => synthOnly;
+
+/* ---------- sonidos de la sala ---------- */
+let noise = null;
+function noiseBuffer() {
+  const c = audioCtx();
+  if (!noise) {
+    noise = c.createBuffer(1, c.sampleRate * 2, c.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  return noise;
+}
+
+/** Metrónomo de la cuenta inicial: un toque de madera; el primero del compás, más agudo. */
+export function playClick(when, accent = false) {
+  const c = audioCtx();
+  const t = Math.max(c.currentTime, when);
+  const o = c.createOscillator();
+  const g = c.createGain();
+  o.type = "sine";
+  o.frequency.setValueAtTime(accent ? 1760 : 1180, t);
+  o.frequency.exponentialRampToValueAtTime(accent ? 1200 : 800, t + 0.05);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(accent ? 0.5 : 0.32, t + 0.003);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+  o.connect(g);
+  g.connect(master);
+  o.start(t);
+  o.stop(t + 0.1);
+}
+
+/** Alguien del público tose: dos golpes de ruido filtrado. */
+export function playCough() {
+  const c = audioCtx();
+  const t0 = c.currentTime + 0.02;
+  const pan = c.createStereoPanner ? c.createStereoPanner() : null;
+  if (pan) { pan.pan.value = Math.random() < 0.5 ? -0.6 : 0.6; pan.connect(master); }
+  for (const [dt, amp] of [[0, 0.5], [0.16, 0.35]]) {
+    const src = c.createBufferSource();
+    src.buffer = noiseBuffer();
+    const bp = c.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = 380 + Math.random() * 200;
+    bp.Q.value = 1.4;
+    const g = c.createGain();
+    const t = t0 + dt;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(amp, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+    src.connect(bp); bp.connect(g); g.connect(pan || master); g.connect(reverbIn);
+    src.start(t, Math.random());
+    src.stop(t + 0.2);
+  }
+}
+
+/** Aplausos: muchas palmadas cortas de ruido repartidas en el tiempo. */
+export function playApplause(seconds = 2, intensity = 1) {
+  const c = audioCtx();
+  const t0 = c.currentTime + 0.03;
+  const bus = c.createGain();
+  bus.gain.value = 0.22 * intensity;
+  bus.connect(master);
+  bus.connect(reverbIn);
+  const hp = c.createBiquadFilter();
+  hp.type = "highpass";
+  hp.frequency.value = 900;
+  hp.connect(bus);
+  const claps = Math.round(seconds * 70 * intensity);
+  for (let i = 0; i < claps; i++) {
+    // más denso al principio, se va apagando
+    const t = t0 + Math.pow(Math.random(), 1.4) * seconds;
+    const src = c.createBufferSource();
+    src.buffer = noiseBuffer();
+    const g = c.createGain();
+    const fade = 1 - (t - t0) / seconds;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.25 + 0.75 * fade * Math.random(), t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03 + Math.random() * 0.03);
+    src.playbackRate.value = 0.8 + Math.random() * 0.6;
+    src.connect(g);
+    g.connect(hp);
+    src.start(t, Math.random() * 1.5);
+    src.stop(t + 0.08);
+  }
+}

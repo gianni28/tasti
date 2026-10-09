@@ -1,9 +1,9 @@
 // Lógica de una partida, sin pantalla ni sonido: aciertos, combo, puntaje, notas largas y pedal.
 // Los tiempos son segundos de la canción.
 
-export const WINDOW_PERFECT = 0.05;
-export const WINDOW_GOOD = 0.1;
-const MISS_AFTER = 0.14;
+export const WINDOW_PERFECT = 0.055;
+export const WINDOW_GOOD = 0.12;
+const MISS_AFTER = 0.16;
 const PEDAL_TIME = 10; // segundos que dura el pedal con el medidor lleno
 const PEDAL_MIN = 0.5; // hace falta medio medidor para pisarlo
 
@@ -60,7 +60,7 @@ export class Game {
     this.score += (best.grade === "perfect" ? 50 : 30) * this.multiplier;
     if (best.hold) best.holding = true;
     this.advance(lane);
-    this.events.push({ type: "hit", grade: best.grade, note: best, t });
+    this.events.push({ type: "hit", grade: best.grade, note: best, t, offset: t - best.t });
     return best;
   }
 

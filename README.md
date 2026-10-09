@@ -6,9 +6,12 @@ Juego de ritmo de piano en el navegador, hermano de [Corde](https://github.com/g
 
 ## Cómo se juega
 
-- Las notas bajan por una pista de 8 carriles (4 por mano) hasta el teclado. Pulsas la tecla de ese carril cuando la nota llega a la línea dorada.
+- Las notas bajan por una pista de 8 carriles (4 por mano) hasta una fila de **botones dorados**, justo antes del teclado. Pulsas la tecla de ese carril cuando la nota queda **encima de su botón**, partida por la línea dorada del medio. El botón se va encendiendo a medida que la nota se acerca.
+- Antes de empezar, **cuenta 1-2-3-4** con metrónomo, al tempo de la pieza.
+- Si aciertas por poco, te dice si fue **un poco pronto** o **un poco tarde**.
 - **Las notas que no te tocan suenan solas.** Si la dificultad recorta un acorde o deja la mano izquierda en automático, esas notas igual suenan, así que la pieza siempre suena completa.
 - **Si fallas, esa nota no suena.** La pieza queda con un hueco y el público tose.
+- **El público** está sentado en el escenario, a los dos lados de la pista, y vive en el mismo espacio 3D (`src/crowd.js`). Se mece con la música y cabecea al pulso cuando vas bien. Con racha empieza a aplaudir. Cada 50 notas seguidas se pone de pie y tira rosas, y al final hay ovación si tocaste bien. Cuando fallas alguien tose, con varios fallos seguidos los vecinos se miran, y si la cosa va muy mal se levantan y se van. Los aplausos y las toses se sintetizan en el navegador.
 - **Notas largas:** se pueden mantener para sumar puntos y llenar el pedal. Si sueltas antes, la nota se apaga.
 - **Pedal** (`Espacio`; en el celular, tocando a los dos lados de la pista a la vez): con medio medidor o más, duplica los puntos durante unos segundos.
 - Al final, **el crítico** escribe una reseña según tu precisión.
@@ -66,6 +69,7 @@ Piano de cola **Salamander Grand Piano** de Alexander Holm ([CC BY 3.0](https://
 src/
   midi.js       lee el .mid → notas planas en segundos y pulsos del compás
   convert.js    manos, dificultades y carriles; lo que no tocas queda en auto
+  crowd.js      el público: espectadores en 3D, sus reacciones y las rosas
   game.js       lógica: ventanas de acierto, combo, notas largas, pedal, el crítico (sin pantalla)
   audio.js      piano por muestras, reverberación, voces que se pueden soltar
   renderer.js   la sala y la pista en canvas 2D (perspectiva, notas con grosor, teclas con frente)
@@ -81,4 +85,4 @@ scripts/
 - Más piezas (Mozart K. 545, Para Elisa, Gymnopédie n.º 1, Chopin)
 - Calibración de latencia en Ajustes, teclas configurables
 - Modo dúo (una mano por celular), clasificaciones con Supabase
-- Retrato del compositor que reacciona y público que aplaude
+- Retrato del compositor que reacciona

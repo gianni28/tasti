@@ -1,10 +1,12 @@
+import { drawCrowd } from "./crowd.js";
+
 // La sala y la pista, dibujadas en un canvas 2D con perspectiva propia.
 // La pista es un plano inclinado (como en la maqueta): cada punto tiene x (de lado a lado),
 // u (a lo largo de la pista, desde el borde de abajo) y h (altura sobre la pista).
 
 const LAYOUTS = {
-  desk: { W: 1280, H: 720, planeW: 560, planeH: 1500, keyLen: 170, tilt: 64, persp: 1000, originY: 100, bottomY: 640, noteLen: 48, noteT: 14, keyT: 24, keyDown: 12, blackT: 44, colH: 260, letters: true },
-  phone: { W: 844, H: 390, planeW: 560, planeH: 760, keyLen: 140, tilt: 62, persp: 700, originY: 30, bottomY: 340, noteLen: 40, noteT: 10, keyT: 18, keyDown: 9, blackT: 32, colH: 160, letters: false },
+  desk: { W: 1280, H: 720, planeW: 560, planeH: 1500, keyLen: 200, tilt: 64, persp: 1000, originY: 100, bottomY: 640, noteLen: 60, noteT: 16, keyT: 24, keyDown: 12, blackT: 34, colH: 260, letters: true },
+  phone: { W: 844, H: 390, planeW: 560, planeH: 760, keyLen: 160, tilt: 62, persp: 700, originY: 30, bottomY: 340, noteLen: 50, noteT: 12, keyT: 18, keyDown: 9, blackT: 26, colH: 160, letters: false },
 };
 const KEY_LETTERS = ["A", "S", "D", "F", "J", "K", "L", "Ñ"];
 const BLACK_AT = [1, 2, 4, 5, 6]; // entre qué carriles van las teclas negras (Do# Re# Fa# Sol# La#)
@@ -237,24 +239,6 @@ export function createRenderer(canvas) {
       x.fill();
     }
 
-    // público en silueta, abajo a los lados
-    const crowd = (x0, mirror) => {
-      const k = s * (L === LAYOUTS.desk ? 1 : 0.42);
-      const by = oy + H;
-      const head = (cx, cy, rr, fill, rim) => {
-        const X = mirror ? x0 - cx * k : x0 + cx * k;
-        x.fillStyle = fill;
-        x.strokeStyle = rim;
-        x.lineWidth = 1;
-        x.beginPath(); x.ellipse(X, by - (180 - cy - rr * 2.4) * k, rr * 1.75 * k, rr * 1.6 * k, 0, 0, Math.PI * 2); x.fill(); x.stroke();
-        x.beginPath(); x.arc(X, by - (180 - cy) * k, rr * k, 0, Math.PI * 2); x.fill(); x.stroke();
-      };
-      for (const [cx, cy] of [[30, 74], [86, 68], [142, 76], [198, 66], [254, 74], [310, 70]]) head(cx, cy, 16, "#1f0c11", "rgba(227,187,92,0.28)");
-      for (const [cx, cy] of [[50, 126], [160, 132], [272, 128]]) head(cx, cy, 26, "#060103", "rgba(227,187,92,0.12)");
-    };
-    crowd(ox - 10 * s, false);
-    crowd(ox + W + 10 * s, true);
-
     const vig = x.createRadialGradient(cw / 2, ch * 0.55, Math.min(cw, ch) * 0.35, cw / 2, ch * 0.55, Math.max(cw, ch) * 0.75);
     vig.addColorStop(0, "rgba(0,0,0,0)");
     vig.addColorStop(1, "rgba(0,0,0,0.55)");
@@ -372,7 +356,7 @@ export function createRenderer(canvas) {
       if (alpha <= 0.01) continue;
       const top = miss ? ["#6b5a4a", "#4a3a2e"] : right(n) ? ["#fffaf0", "#e3d4ae"] : ["#f6d488", "#c99238"];
       const side = miss ? "#2e241c" : right(n) ? "#a3906a" : "#7a4f18";
-      const [a, b] = box(x0, x1, u, u + L.noteLen, L.noteT, top, side, alpha);
+      const [a, b] = box(x0, x1, u - L.noteLen / 2, u + L.noteLen / 2, L.noteT, top, side, alpha);
       // brillo del borde de arriba
       g.globalAlpha = alpha * 0.5;
       g.strokeStyle = "#fff";
@@ -381,23 +365,50 @@ export function createRenderer(canvas) {
       g.globalAlpha = 1;
     }
 
-    // línea de golpe y marcos de cada carril
+    // botones objetivo: la nota se pisa cuando su centro cae sobre la línea dorada del medio.
+    // Cada botón se enciende a medida que se acerca su próxima nota.
     {
-      const a = P(-half, L.keyLen - 4, 1), b = P(half, L.keyLen - 4, 1), c = P(half, L.keyLen + 4, 1), d = P(-half, L.keyLen + 4, 1);
+      const approach = new Array(8).fill(0);
+      for (const i of active) {
+        const list = game.byLane[i];
+        for (let j = game.next[i]; j < list.length; j++) {
+          const n = list[j];
+          if (n.grade) continue;
+          const d = n.t - now;
+          if (d > 0.5) break;
+          approach[i] = Math.max(approach[i], 1 - Math.max(0, d) / 0.5);
+          break;
+        }
+      }
+      const pu0 = L.keyLen - L.noteLen * 0.62, pu1 = L.keyLen + L.noteLen * 0.62;
+      for (const i of active) {
+        const a = approach[i], down = held.has(i);
+        const x0 = laneX(i) + 4, x1 = laneX(i + 1) - 4;
+        const warm = i >= 4 ? "255,240,205" : "255,208,110";
+        const c0 = P(x0, pu0, 3), c1 = P(x1, pu0, 3), c2 = P(x1, pu1, 3), c3 = P(x0, pu1, 3);
+        quad(P(x0, pu0, 0), P(x1, pu0, 0), c1, c0);
+        g.fillStyle = "#0c0406";
+        g.fill();
+        quad(c0, c1, c2, c3);
+        g.fillStyle = `rgba(${warm},${0.08 + a * a * 0.55 + (down ? 0.25 : 0)})`;
+        g.fill();
+        g.save();
+        if (a > 0.6 || down) { g.shadowColor = `rgba(${warm},0.9)`; g.shadowBlur = (8 + a * 14) * s; }
+        g.strokeStyle = down ? "#fff4d0" : `rgba(227,187,92,${0.55 + a * 0.45})`;
+        g.lineWidth = Math.max(1.5, (2 + a * 2) * c0[2]);
+        quad(c0, c1, c2, c3);
+        g.stroke();
+        g.restore();
+      }
+      // línea de golpe por el centro de los botones
+      const a = P(-half, L.keyLen - 2.5, 4), b = P(half, L.keyLen - 2.5, 4), c = P(half, L.keyLen + 2.5, 4), d = P(-half, L.keyLen + 2.5, 4);
       g.save();
-      g.shadowColor = "rgba(255,210,120,0.85)";
-      g.shadowBlur = 18 * s;
+      g.shadowColor = "rgba(255,210,120,0.9)";
+      g.shadowBlur = 14 * s;
       quad(a, b, c, d);
       g.fillStyle = pedalOn ? "#fff1c0" : "#f3d27a";
       g.fill();
       g.restore();
-      for (const i of active) {
-        const r0 = P(laneX(i) + 6, L.keyLen + 6, 1), r1 = P(laneX(i + 1) - 6, L.keyLen + 6, 1), r2 = P(laneX(i + 1) - 6, L.keyLen + 6 + L.noteLen * 0.85, 1), r3 = P(laneX(i) + 6, L.keyLen + 6 + L.noteLen * 0.85, 1);
-        quad(r0, r1, r2, r3);
-        g.strokeStyle = held.has(i) ? "rgba(255,226,150,0.9)" : "rgba(227,187,92,0.45)";
-        g.lineWidth = Math.max(1, 2 * r0[2]);
-        g.stroke();
-      }
     }
 
     // destellos al acertar: brillo en la pista y columna de luz que sube de la tecla
@@ -435,7 +446,8 @@ export function createRenderer(canvas) {
       }
     }
 
-    // teclado: blancas con frente, negras encima
+    // teclado: blancas con frente, negras encima. Termina antes de los botones para no taparlos.
+    const keyEnd = L.keyLen - L.noteLen * 0.62 - 10;
     for (let i = 0; i < 8; i++) {
       const down = held.has(i);
       const on = active.has(i);
@@ -443,7 +455,7 @@ export function createRenderer(canvas) {
       const lit = down && on;
       const top = lit ? (i >= 4 ? ["#f3e2b0", "#fffdf6"] : ["#f0c870", "#fff6dc"]) : on ? ["#cfc09a", "#fbf6e8"] : ["#6e6656", "#8d8572"];
       const side = lit ? "#b8955a" : on ? "#a8966a" : "#4a4436";
-      const [a, b, c, d] = box(laneX(i) + 2, laneX(i + 1) - 2, 2, L.keyLen - 8, h, top, side);
+      const [a, b, c, d] = box(laneX(i) + 2, laneX(i + 1) - 2, 2, keyEnd, h, top, side);
       if (L.letters && on) {
         const p = P(laneX(i) + laneW / 2, 26, h);
         g.fillStyle = lit ? "#7a4f18" : "#7a5a36";
@@ -456,7 +468,7 @@ export function createRenderer(canvas) {
     for (const bi of BLACK_AT) {
       const cx = laneX(bi);
       const w = laneW * 0.26;
-      box(cx - w, cx + w, L.keyLen * 0.46, L.keyLen - 8, L.blackT, ["#4a3a2e", "#120c09"], "#0a0604");
+      box(cx - w, cx + w, keyEnd * 0.46, keyEnd, L.blackT, ["#4a3a2e", "#120c09"], "#0a0604");
     }
 
     // cuerpo del piano debajo de las teclas
@@ -487,6 +499,8 @@ export function createRenderer(canvas) {
       }
     }
 
+    if (st.crowd) drawCrowd(g, P, st.crowd, now, L.planeH * 0.55);
+
     g.drawImage(front, 0, 0, cw, ch);
 
     // palabras que flotan: juicio del acierto y toses del público
@@ -515,6 +529,11 @@ export function createRenderer(canvas) {
         }
         g.fillStyle = w.color || "#f6d27e";
         g.fillText(w.text, x, y);
+        if (w.sub) {
+          g.font = `italic 600 ${Math.round((L === LAYOUTS.desk ? 24 : 16) * s)}px "Cormorant Garamond", serif`;
+          g.fillStyle = "#f3e6c8";
+          g.fillText(w.sub, x, y + size * 0.55);
+        }
       }
       g.globalAlpha = 1;
     }

@@ -10,17 +10,17 @@ import "./style.css";
 import { readMidi } from "./midi.js";
 import { buildChart, DIFFS } from "./convert.js";
 import { Game, review } from "./game.js";
-import { audioCtx, unlockAudio, loadPiano, playNote, stopAll, isSynth } from "./audio.js";
+import { audioCtx, unlockAudio, loadPiano, playNote, stopAll, isSynth, playClick, playCough, playApplause } from "./audio.js";
+import { createCrowd } from "./crowd.js";
 import { createRenderer } from "./renderer.js";
 import { SONGS } from "./songs.js";
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const BOT = params.has("bot"); // el piano toca solo (para probar y para mostrar)
-const LEAD_IN = 2.2; // segundos antes de la primera nota
+const LEAD_IN = 2.2; // segundos mínimos antes de la primera nota (más si la cuenta 1-2-3-4 lo pide)
 
 const KEY_LANES = { KeyA: 0, KeyS: 1, KeyD: 2, KeyF: 3, KeyJ: 4, KeyK: 5, KeyL: 6, Semicolon: 7 };
-const COUGHS = ["cof", "¡cof!", "ejem", "cof, cof"];
 const STAR = '<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><polygon points="12,2 15,9 22,9.5 16.5,14 18.5,21.5 12,17.5 5.5,21.5 7.5,14 2,9.5 9,9" fill="FILL" stroke="#8a2236" stroke-width="1.6"/></svg>';
 
 const app = {
@@ -40,7 +40,10 @@ const app = {
   words: [],
   autoIdx: 0,
   lastNow: 0,
-  lastCough: -9,
+  crowd: null,
+  beatIdx: 0,
+  endAt: 0,
+  ovated: false,
   pointers: new Map(), // dedo → carril
   sideTap: { L: -9, R: -9 },
 };
@@ -156,7 +159,10 @@ async function start() {
   app.effects = [];
   app.words = [];
   app.autoIdx = 0;
-  app.lastCough = -9;
+  app.crowd = createCrowd();
+  app.beatIdx = 0;
+  app.ovated = false;
+  app.endAt = app.chart.duration + 1.2;
   app.paused = false;
 
   $("menu").classList.add("hidden");
@@ -169,7 +175,17 @@ async function start() {
 
   const ctx = audioCtx();
   if (ctx.state === "suspended") await ctx.resume().catch(() => {});
-  app.startAt = ctx.currentTime + LEAD_IN;
+  // cuenta 1-2-3-4 con metrónomo, en los cuatro pulsos antes de la primera nota
+  const beats = raw.beats;
+  const bl = Math.min(1.2, Math.max(0.3, beats.length > 1 ? beats[1][0] - beats[0][0] : 0.6));
+  const first = Math.min(app.chart.notes[0]?.t ?? Infinity, app.chart.auto[0]?.t ?? Infinity);
+  const b0 = beats.filter(([bt]) => bt <= first + 0.01).pop()?.[0] ?? first;
+  const count = [4, 3, 2, 1].map((i) => b0 - i * bl);
+  app.startAt = ctx.currentTime + Math.max(LEAD_IN, -count[0] + 0.5);
+  count.forEach((ct, i) => {
+    playClick(app.startAt + ct, i === 0);
+    app.words.push({ text: String(i + 1), t: ct, life: bl * 0.9, color: "#fff3d2" });
+  });
   app.lastNow = now();
   app.running = true;
   requestAnimationFrame(frame);
@@ -228,23 +244,42 @@ function frame() {
   game.update(t, dt);
   for (const e of game.takeEvents()) {
     if (e.type === "hit") {
-      app.words = app.words.filter((w) => w.cough);
-      app.words.push({ text: e.grade === "perfect" ? "Perfecto" : "Bien", t, life: 0.5, color: e.grade === "perfect" ? "#f6d27e" : "#e6d4a8" });
-      if (game.combo > 0 && game.combo % 50 === 0) app.words.push({ text: `¡${game.combo} seguidas!`, t: t + 0.05, life: 1.1, color: "#fff1c0" });
-    } else if (e.type === "miss" && t - app.lastCough > 0.7 && Math.random() < 0.45) {
-      app.lastCough = t;
-      const side = Math.random() < 0.5 ? 0.06 + Math.random() * 0.14 : 0.8 + Math.random() * 0.14;
-      app.words.push({ cough: true, text: COUGHS[Math.floor(Math.random() * COUGHS.length)], x: side, t, life: 1.3 });
+      app.words = app.words.filter((w) => !w.judge);
+      const perfect = e.grade === "perfect";
+      app.words.push({ judge: true, text: perfect ? "Perfecto" : "Bien", sub: perfect ? "" : e.offset < 0 ? "un poco pronto" : "un poco tarde", t, life: 0.55, color: perfect ? "#f6d27e" : "#e6d4a8" });
+      if (game.combo > 0 && game.combo % 50 === 0) {
+        app.words = app.words.filter((w) => !w.judge);
+        app.words.push({ judge: true, text: `¡${game.combo} seguidas!`, t, life: 1.2, color: "#fff1c0" });
+      }
+      app.crowd.hit(t, game.combo);
+    } else if (e.type === "miss") app.crowd.miss(t);
+  }
+  // fase del pulso, para que el público cabecee a tiempo
+  const beats = chart.beats;
+  while (app.beatIdx < beats.length - 2 && beats[app.beatIdx + 1][0] <= t) app.beatIdx++;
+  const b = beats[app.beatIdx], bn = beats[app.beatIdx + 1];
+  const beat = b && bn && t >= b[0] ? (t - b[0]) / (bn[0] - b[0]) : 0;
+  app.crowd.update(t, dt, { combo: game.combo, pedalOn: game.pedalOn, beat, judged: game.judged });
+  for (const snd of app.crowd.takeSounds()) {
+    if (snd === "cough") playCough();
+    else playApplause(snd === "ovation" ? 4.5 : 2.2, snd === "ovation" ? 1.3 : 0.8);
+  }
+  // final: si fue bien, ovación de pie antes de la reseña
+  if (!app.ovated && t > chart.duration + 0.2) {
+    app.ovated = true;
+    if (game.accuracy >= 0.85 && game.judged >= game.notes.length * 0.5) {
+      app.crowd.ovation(t, 16, true);
+      app.endAt = chart.duration + 3.4;
     }
   }
   app.effects = app.effects.filter((e) => t - e.t < 0.4);
   app.words = app.words.filter((w) => t - w.t < w.life);
   const holds = game.notes.filter((n) => n.holding).map((n) => ({ lane: n.lane, t, hold: true }));
 
-  app.r.draw({ now: t, chart, game, held: app.held, effects: app.effects.concat(holds), words: app.words, pedalOn: game.pedalOn });
+  app.r.draw({ now: t, chart, game, held: app.held, effects: app.effects.concat(holds), words: app.words, pedalOn: game.pedalOn, crowd: app.crowd });
   hud(t);
 
-  if (t > chart.duration + 1.2) return finish();
+  if (t > app.endAt) return finish();
   requestAnimationFrame(frame);
 }
 
