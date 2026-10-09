@@ -462,7 +462,7 @@ export function createRenderer(canvas) {
         g.font = `700 ${Math.round(30 * p[2])}px "Cormorant Garamond", serif`;
         g.textAlign = "center";
         g.textBaseline = "alphabetic";
-        g.fillText(KEY_LETTERS[i], p[0], p[1]);
+        g.fillText((st.keyLabels || KEY_LETTERS)[i], p[0], p[1]);
       }
     }
     for (const bi of BLACK_AT) {

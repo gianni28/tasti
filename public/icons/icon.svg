@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="75%"><stop offset="0" stop-color="#5a1a22"/><stop offset="1" stop-color="#1a070b"/></radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6d488"/><stop offset="1" stop-color="#c99238"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <g transform="translate(96 150)">
+    <rect x="0" y="0" width="76" height="210" rx="10" fill="#f4ecd8"/>
+    <rect x="82" y="0" width="76" height="210" rx="10" fill="url(#gold)"/>
+    <rect x="164" y="0" width="76" height="210" rx="10" fill="#f4ecd8"/>
+    <rect x="246" y="0" width="76" height="210" rx="10" fill="#f4ecd8"/>
+    <rect x="54" y="0" width="46" height="128" rx="6" fill="#17110d"/>
+    <rect x="136" y="0" width="46" height="128" rx="6" fill="#17110d"/>
+    <rect x="218" y="0" width="46" height="128" rx="6" fill="#17110d"/>
+  </g>
+  <rect x="80" y="120" width="352" height="12" rx="6" fill="#e3bb5c"/>
+</svg>

@@ -9,7 +9,8 @@ const SAMPLE_NAME = { 0: "C", 3: "Ds", 6: "Fs", 9: "A" };
 const sampleUrl = (m) => `${SAMPLE_BASE}${SAMPLE_NAME[m % 12]}${Math.floor(m / 12) - 1}.mp3`;
 
 let ctx = null;
-let master = null; // todo pasa por aquí
+let master = null; // el piano pasa por aquí
+let room = null; // público y metrónomo
 let reverbIn = null;
 const buffers = new Map(); // midi → AudioBuffer
 const live = new Set(); // voces sonando o programadas, para poder callarlas al salir
@@ -83,6 +84,21 @@ function buildChain() {
   reverbIn.connect(conv);
   conv.connect(wet);
   wet.connect(comp);
+  master.connect(reverbIn);
+
+  room = ctx.createGain();
+  room.gain.value = roomVol;
+  room.connect(comp);
+  master.gain.value = pianoVol;
+}
+
+let pianoVol = 0.9, roomVol = 1;
+/** Volúmenes de 0 a 1: el piano y la sala (aplausos, toses, metrónomo). */
+export function setVolumes(piano, sala) {
+  pianoVol = piano * 0.9;
+  roomVol = sala;
+  if (master) master.gain.value = pianoVol;
+  if (room) room.gain.value = roomVol;
 }
 
 /** Carga las muestras que hacen falta para notas entre lo y hi. onProgress(0..1). */
@@ -124,7 +140,6 @@ export function playNote(midi, vel = 0.6, when = 0, dur = 0.5) {
   const gain = c.createGain();
   const level = 0.15 + Math.pow(Math.min(1, vel), 1.4) * 0.75;
   gain.connect(master);
-  gain.connect(reverbIn);
   let stopAt;
   const voice = { sources: [], gain, ended: false };
 
@@ -209,7 +224,7 @@ export function playClick(when, accent = false) {
   g.gain.exponentialRampToValueAtTime(accent ? 0.5 : 0.32, t + 0.003);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
   o.connect(g);
-  g.connect(master);
+  g.connect(room);
   o.start(t);
   o.stop(t + 0.1);
 }
@@ -219,7 +234,7 @@ export function playCough() {
   const c = audioCtx();
   const t0 = c.currentTime + 0.02;
   const pan = c.createStereoPanner ? c.createStereoPanner() : null;
-  if (pan) { pan.pan.value = Math.random() < 0.5 ? -0.6 : 0.6; pan.connect(master); }
+  if (pan) { pan.pan.value = Math.random() < 0.5 ? -0.6 : 0.6; pan.connect(room); }
   for (const [dt, amp] of [[0, 0.5], [0.16, 0.35]]) {
     const src = c.createBufferSource();
     src.buffer = noiseBuffer();
@@ -232,7 +247,7 @@ export function playCough() {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(amp, t + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
-    src.connect(bp); bp.connect(g); g.connect(pan || master); g.connect(reverbIn);
+    src.connect(bp); bp.connect(g); g.connect(pan || room); g.connect(reverbIn);
     src.start(t, Math.random());
     src.stop(t + 0.2);
   }
@@ -244,7 +259,7 @@ export function playApplause(seconds = 2, intensity = 1) {
   const t0 = c.currentTime + 0.03;
   const bus = c.createGain();
   bus.gain.value = 0.22 * intensity;
-  bus.connect(master);
+  bus.connect(room);
   bus.connect(reverbIn);
   const hp = c.createBiquadFilter();
   hp.type = "highpass";

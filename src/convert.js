@@ -12,7 +12,7 @@ export const DIFFS = {
 
 const SAME_ONSET = 0.03; // notas a menos de 30 ms cuentan como un acorde
 const WINDOW = 0.9; // segundos a cada lado para decidir la posición relativa
-const SUSTAIN_MIN = 0.45; // más largo que esto: nota larga (se puede mantener)
+const SUSTAIN_MIN = 0.75; // más largo que esto: nota larga (se puede mantener)
 const LANE_MIN_GAP = 0.09; // dos notas en el mismo carril no pueden estar más pegadas
 
 /** Mano de cada nota: por pista si hay dos o más, por altura si todo viene en una. */
@@ -76,48 +76,104 @@ function percentile(sorted, p) {
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(p * (sorted.length - 1))))];
 }
 
-/** Carriles 0-3 para los grupos que se tocan de una mano */
-function laneHand(groups) {
+// combinaciones de m carriles entre 4, en orden (para acordes)
+const COMBOS = [[], [], [], []].map((_, m) => {
+  const out = [];
+  const rec = (start, acc) => {
+    if (acc.length === m) { out.push(acc); return; }
+    for (let l = start; l < 4; l++) rec(l + 1, [...acc, l]);
+  };
+  if (m) rec(0, []);
+  return out;
+});
+
+/**
+ * Carriles 0-3 para los grupos que se tocan de una mano.
+ * Se buscan los carriles de toda la mano de una vez (Viterbi): cada grupo puede caer en varias
+ * posiciones y se elige el camino más barato, donde sale caro que una nota repetida cambie de
+ * carril, que dos notas distintas seguidas compartan carril o que el carril vaya contra la melodía,
+ * y sale barato quedarse cerca de la posición relativa de la nota entre las que la rodean.
+ */
+function laneHand(groups, hand) {
+  if (!groups.length) return;
   const all = groups.flatMap((g) => g.notes.map((n) => n.midi)).sort((a, b) => a - b);
   const lo = percentile(all, 0.05), hi = Math.max(lo + 1, percentile(all, 0.95));
   const rel = (p) => Math.min(1, Math.max(0, (p - lo) / (hi - lo)));
 
+  // posición relativa de cada nota dentro de su ventana (lo que el jugador "espera")
   let start = 0;
-  let prev = null; // último grupo de una sola nota
-  for (let i = 0; i < groups.length; i++) {
-    const g = groups[i];
+  for (const g of groups) {
     while (groups[start].t < g.t - WINDOW) start++;
     const pitches = new Set();
     for (let j = start; j < groups.length && groups[j].t <= g.t + WINDOW; j++) for (const n of groups[j].notes) pitches.add(n.midi);
     const P = [...pitches].sort((a, b) => a - b);
-    const k = P.length;
-    const span = Math.min(3, k - 1);
-    const mean = P.reduce((s, p) => s + p, 0) / k;
-    const base = Math.round(rel(mean) * (3 - span));
+    const k = P.length, span = Math.min(3, k - 1);
+    const mean = P.reduce((a, b) => a + b, 0) / k;
+    const base = Math.round(rel(mean) * (3 - span)) ;
+    g.sorted = [...g.notes].sort((a, b) => a.midi - b.midi);
+    g.lead = hand === "R" ? g.sorted[g.sorted.length - 1] : g.sorted[0];
+    g.want = g.sorted.map((n) => (k === 1 ? rel(n.midi) * 3 : base + (P.indexOf(n.midi) * span) / (k - 1)));
+    g.states = COMBOS[g.sorted.length];
+  }
 
-    const sorted = [...g.notes].sort((a, b) => a.midi - b.midi);
-    for (const n of sorted) {
-      const r = P.indexOf(n.midi);
-      n.lane = k === 1 ? Math.round(rel(n.midi) * 3) : base + Math.round((r * span) / (k - 1));
+  const leadIdx = (g) => (hand === "R" ? g.sorted.length - 1 : 0);
+  const emit = (g, st) => {
+    let c = 0;
+    for (let i = 0; i < st.length; i++) c += Math.abs(st[i] - g.want[i]) * 0.45;
+    if (st.length > 1) {
+      // acordes: separación de carriles parecida a la separación de las notas
+      const iv = g.sorted[g.sorted.length - 1].midi - g.sorted[0].midi;
+      const want = Math.min(3, Math.max(st.length - 1, iv / 4));
+      c += Math.abs(st[st.length - 1] - st[0] - want) * 0.3;
     }
-    // acorde: carriles distintos y en el mismo orden que las notas
-    for (let j = 1; j < sorted.length; j++) if (sorted[j].lane <= sorted[j - 1].lane) sorted[j].lane = sorted[j - 1].lane + 1;
-    const over = sorted[sorted.length - 1].lane - 3;
-    if (over > 0) for (const n of sorted) n.lane -= over;
-
-    // nota suelta: que el carril siga la dirección de la melodía
-    if (sorted.length === 1) {
-      const n = sorted[0];
-      if (prev && g.t - prev.t < 1.2) {
-        const d = n.midi - prev.midi;
-        if (d === 0) n.lane = prev.lane;
-        // sube pero ya estaba en el borde: vuelve a empezar desde el otro lado (como una cascada),
-        // porque una nota distinta en el mismo carril se siente como repetir la misma
-        else if (d > 0 && n.lane <= prev.lane) n.lane = prev.lane < 3 ? prev.lane + 1 : n.lane < 3 ? n.lane : 0;
-        else if (d < 0 && n.lane >= prev.lane) n.lane = prev.lane > 0 ? prev.lane - 1 : n.lane > 0 ? n.lane : 3;
+    return c;
+  };
+  const trans = (a, sa, b, sb) => {
+    const gap = b.t - a.t;
+    const weight = gap > 1.5 ? 0.25 : 1;
+    const pa = a.lead.midi, pb = b.lead.midi;
+    const la = sa[leadIdx(a)], lb = sb[leadIdx(b)];
+    const d = pb - pa, dl = lb - la;
+    let c = 0;
+    if (d === 0) c += dl === 0 ? 0 : 10;
+    else if (dl === 0) c += 8; // nota distinta, mismo carril: parece repetida
+    else if (Math.sign(dl) !== Math.sign(d)) c += 4; // carril al revés de la melodía
+    else c += Math.abs(Math.abs(dl) - Math.min(3, Math.max(1, Math.abs(d) / 2.5))) * 0.6;
+    // el resto de notas: una nota que se repite debe quedarse en su carril; una distinta no debe caer en el carril de otra recién tocada
+    for (let i = 0; i < b.sorted.length; i++) {
+      const n = b.sorted[i], ln = sb[i];
+      for (let j = 0; j < a.sorted.length; j++) {
+        const m = a.sorted[j], lm = sa[j];
+        if (m.midi === n.midi && lm !== ln) c += 5;
+        else if (m.midi !== n.midi && lm === ln && gap < 0.35) c += 3;
       }
-      prev = { t: g.t, midi: n.midi, lane: n.lane };
-    } else prev = null;
+    }
+    return c * weight;
+  };
+
+  // Viterbi
+  let cost = groups[0].states.map((st) => emit(groups[0], st));
+  const back = [null];
+  for (let i = 1; i < groups.length; i++) {
+    const a = groups[i - 1], b = groups[i];
+    const next = [], from = [];
+    for (const sb of b.states) {
+      let best = Infinity, arg = 0;
+      a.states.forEach((sa, ai) => {
+        const c = cost[ai] + trans(a, sa, b, sb);
+        if (c < best) { best = c; arg = ai; }
+      });
+      next.push(best + emit(b, sb));
+      from.push(arg);
+    }
+    cost = next;
+    back.push(from);
+  }
+  let si = cost.indexOf(Math.min(...cost));
+  for (let i = groups.length - 1; i >= 0; i--) {
+    const g = groups[i], st = g.states[si];
+    g.sorted.forEach((n, j) => (n.lane = st[j]));
+    if (i > 0) si = back[i][si];
   }
 }
 
@@ -146,7 +202,7 @@ export function buildChart(raw, diffKey) {
       kept.push({ t: g.t, notes: keep.map((n) => ({ ...n })) });
       last = g.t;
     }
-    laneHand(kept);
+    laneHand(kept, hand);
     const offset = hand === "L" ? 0 : 4;
     for (const g of kept) for (const n of g.notes) play.push({ ...n, lane: n.lane + offset });
   }
@@ -179,4 +235,17 @@ export function buildChart(raw, diffKey) {
     beats: raw.beats,
     duration: raw.duration,
   };
+}
+
+/** Dificultad de 1 a 5 de un chart: notas por segundo, acordes y velocidad de la pista. */
+export function starsFor(chart) {
+  if (!chart.notes.length) return 1;
+  const span = Math.max(1, chart.notes[chart.notes.length - 1].t - chart.notes[0].t);
+  const nps = chart.notes.length / span;
+  let groups = 0;
+  for (let i = 0; i < chart.notes.length; i++) if (i === 0 || chart.notes[i].t - chart.notes[i - 1].t > 0.03) groups++;
+  const chordy = chart.notes.length / groups; // 1 = sin acordes
+  const speed = 2.0 / chart.lookahead;
+  const x = nps * (1 + (chordy - 1) * 0.6) * (0.8 + speed * 0.2);
+  return x < 1.3 ? 1 : x < 2.3 ? 2 : x < 3.4 ? 3 : x < 4.8 ? 4 : 5;
 }

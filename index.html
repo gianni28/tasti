@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
   <meta name="theme-color" content="#1a070b" />
   <meta name="description" content="Tasti: toca los clásicos del piano con ocho dedos." />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>Tasti</title>
 </head>
 <body>
@@ -13,6 +17,12 @@
     <div class="curtain left" aria-hidden="true"></div>
     <div class="curtain right" aria-hidden="true"></div>
     <div class="valance" aria-hidden="true"></div>
+
+    <nav class="topbar" aria-label="Menú">
+      <button id="tutorialBtn" class="chip">Ensayo</button>
+      <button id="boardBtn" class="chip">Salón de la fama</button>
+      <button id="settingsBtn" class="chip">Ajustes</button>
+    </nav>
 
     <div class="menu-wrap">
       <header class="brand">
@@ -28,10 +38,15 @@
               <div class="small-caps red">Gran velada de piano</div>
               <h2>Programa</h2>
             </div>
+            <div id="searchWrap" class="search hidden">
+              <label for="search" class="sr-only">Buscar pieza o compositor</label>
+              <input id="search" type="search" placeholder="Buscar pieza o compositor…" autocomplete="off" />
+            </div>
             <ol id="songList" class="songs"></ol>
+            <p id="libStatus" class="lib-status"></p>
             <label class="load-midi">
               <input id="midiFile" type="file" accept=".mid,.midi,audio/midi" />
-              <span>+ Cargar un MIDI propio</span>
+              <span>+ Probar un MIDI de tu computador</span>
             </label>
           </div>
         </div>
@@ -41,12 +56,20 @@
           <div id="selTitle" class="sel-title">—</div>
           <div id="selComposer" class="sel-composer"></div>
           <p id="selQuip" class="quip"></p>
+          <button id="listenBtn" class="link-btn" aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M7 5l12 7-12 7z" fill="currentColor" /></svg>
+            <span>Escuchar un fragmento</span>
+          </button>
           <div class="small-caps gold" style="margin-top: 14px">Dificultad</div>
           <div id="diffs" class="diffs" role="radiogroup" aria-label="Dificultad"></div>
           <div id="diffBlurb" class="blurb"></div>
           <div id="diffStats" class="blurb dim"></div>
           <button id="playBtn" class="btn-gold">Tocar</button>
-          <div class="keys-hint" id="keysHint">Teclas: <b>A S D F</b> mano izquierda · <b>J K L Ñ</b> mano derecha · <b>Espacio</b> pedal · <b>Esc</b> pausa</div>
+          <div id="miniBoard" class="mini-board hidden">
+            <div class="small-caps gold">Mejores en este nivel</div>
+            <ol id="miniBoardList"></ol>
+          </div>
+          <div class="keys-hint" id="keysHint"></div>
         </div>
       </div>
     </div>
@@ -55,6 +78,7 @@
   <!-- Partida -->
   <section id="play" class="screen hidden">
     <canvas id="stage"></canvas>
+    <div id="coach" class="coach hidden" aria-live="polite"><div id="coachText"></div><div id="coachSub"></div></div>
     <div class="hud left plaque">
       <div class="small-caps gold" id="hudPiece">—</div>
       <div class="progress"><div id="hudProgress"></div></div>
@@ -67,11 +91,16 @@
       <div class="small-caps gold">Combo</div>
     </div>
     <div class="hud right plaque">
-      <div class="small-caps gold">Precisión</div>
-      <div class="big" id="hudAcc">100%</div>
+      <div class="hud-row">
+        <div class="hud-col">
+          <div class="small-caps gold">Precisión</div>
+          <div class="big" id="hudAcc">100%</div>
+        </div>
+        <figure class="portrait" id="portrait" aria-label="El compositor"></figure>
+      </div>
       <div class="small-caps gold mt">Pedal</div>
       <div class="meter"><div id="hudPedal"></div></div>
-      <div class="hint" id="hudPedalHint">Espacio cuando pase la mitad</div>
+      <div class="hint" id="hudPedalHint"></div>
     </div>
     <button id="pauseBtn" class="pause-btn" aria-label="Pausa">
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="3" stroke-linecap="round" /></svg>
@@ -113,9 +142,125 @@
         <div class="big gold-text" id="resScore">0</div>
         <div id="resRecord" class="record hidden">Récord personal</div>
         <dl id="resList"></dl>
+        <div id="resBoard" class="res-board hidden">
+          <div class="small-caps gold" id="resBoardTitle">Clasificación</div>
+          <ol id="resBoardList"></ol>
+          <p id="resBoardNote" class="hint"></p>
+          <button id="resNameBtn" class="link-btn hidden">Poner mi nombre en la clasificación</button>
+        </div>
         <button id="againBtn" class="btn-gold">Tocar de nuevo</button>
         <button id="backBtn" class="btn-line">Otra pieza</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Nombre (se pide una sola vez) -->
+  <div id="nameBox" class="overlay hidden">
+    <form class="card" id="nameForm">
+      <h2>Tu nombre en el programa</h2>
+      <p>Así sale en la clasificación. Se pone una sola vez y no se repite con nadie.</p>
+      <label for="nameInput" class="sr-only">Nombre</label>
+      <input id="nameInput" class="field" maxlength="20" autocomplete="nickname" required />
+      <p id="nameErr" class="err" role="alert"></p>
+      <button class="btn-gold" type="submit">Guardar</button>
+      <button class="btn-line" type="button" id="nameSkip">Ahora no</button>
+    </form>
+  </div>
+
+  <!-- Salón de la fama -->
+  <div id="board" class="overlay hidden">
+    <div class="card wide-card">
+      <h2>Salón de la fama</h2>
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tabTotal" aria-selected="true">General</button>
+        <button role="tab" id="tabPiece" aria-selected="false">Esta pieza</button>
+      </div>
+      <p id="boardSub" class="hint"></p>
+      <ol id="boardList" class="board-list"></ol>
+      <button id="boardClose" class="btn-line">Cerrar</button>
+    </div>
+  </div>
+
+  <!-- Ajustes -->
+  <div id="settings" class="overlay hidden">
+    <div class="card wide-card settings-card">
+      <h2>Ajustes</h2>
+
+      <div class="set-row">
+        <label for="setLatency">Sincronía <span id="setLatencyVal" class="dim"></span></label>
+        <input id="setLatency" type="range" min="-200" max="200" step="5" />
+        <button id="calibrateBtn" class="btn-line small">Calibrar con el metrónomo</button>
+        <p class="hint">Si las notas te suenan tarde o temprano respecto a la pista, ajusta esto.</p>
+      </div>
+
+      <div class="set-row">
+        <label for="setSpeed">Velocidad de la pista</label>
+        <select id="setSpeed" class="field">
+          <option value="0.75">Tranquila</option>
+          <option value="1">Normal</option>
+          <option value="1.25">Rápida</option>
+          <option value="1.5">Muy rápida</option>
+        </select>
+        <p class="hint">Más rápida = las notas van más separadas y se leen mejor, pero aparecen con menos aviso.</p>
+      </div>
+
+      <div class="set-row two">
+        <div><label for="setPiano">Piano</label><input id="setPiano" type="range" min="0" max="1" step="0.05" /></div>
+        <div><label for="setRoom">Público y metrónomo</label><input id="setRoom" type="range" min="0" max="1" step="0.05" /></div>
+      </div>
+
+      <div class="set-row" id="keysRow">
+        <div class="label">Teclas <span class="dim">(toca una y luego pulsa la tecla nueva)</span></div>
+        <div id="keyGrid" class="key-grid"></div>
+        <button id="keysReset" class="link-btn">Volver a A S D F · J K L Ñ</button>
+      </div>
+
+      <div class="set-row">
+        <button id="adminBtn" class="link-btn">Subir canciones a la biblioteca</button>
+      </div>
+      <button id="settingsClose" class="btn-gold">Listo</button>
+    </div>
+  </div>
+
+  <!-- Calibración -->
+  <div id="calib" class="overlay hidden">
+    <div class="card">
+      <h2>Calibrar</h2>
+      <p id="calibText">Pulsa cualquier tecla (o toca la pantalla) cada vez que suene el metrónomo. Son 8 golpes.</p>
+      <div class="calib-dots" id="calibDots"></div>
+      <button id="calibStart" class="btn-gold">Empezar</button>
+      <button id="calibClose" class="btn-line">Cerrar</button>
+    </div>
+  </div>
+
+  <!-- Panel de admin: subir canciones -->
+  <div id="admin" class="overlay hidden">
+    <div class="card admin-card">
+      <h2>Biblioteca</h2>
+      <div id="adminLogin">
+        <p>Escribe el código de admin para subir y editar canciones.</p>
+        <label for="adminCode" class="sr-only">Código</label>
+        <input id="adminCode" class="field" type="password" autocomplete="current-password" />
+        <p id="adminErr" class="err" role="alert"></p>
+        <button id="adminEnter" class="btn-gold">Entrar</button>
+      </div>
+      <div id="adminPanel" class="hidden">
+        <label class="drop" id="adminDrop">
+          <input id="adminFiles" type="file" accept=".mid,.midi,audio/midi" multiple />
+          <span><b>Elegir archivos .mid</b> o arrastrarlos aquí</span>
+        </label>
+        <div id="adminPending" class="admin-list"></div>
+        <h3>En la biblioteca</h3>
+        <div id="adminSongs" class="admin-list"></div>
+        <details class="admin-code">
+          <summary>Cambiar el código de admin</summary>
+          <label for="adminNewCode">Código nuevo</label>
+          <input id="adminNewCode" class="field" type="password" autocomplete="new-password" />
+          <button id="adminChangeCode" class="btn-line small">Cambiar</button>
+          <p id="adminCodeMsg" class="hint"></p>
+        </details>
+      </div>
+      <button id="adminClose" class="btn-line">Cerrar</button>
     </div>
   </div>
 
@@ -125,6 +270,8 @@
       <p>Tasti se toca en horizontal, con el teléfono apoyado.</p>
     </div>
   </div>
+
+  <div id="toast" class="toast hidden" role="status"></div>
 
   <script type="module" src="/src/main.js"></script>
 </body>

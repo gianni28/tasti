@@ -15,15 +15,16 @@ const hash = (n) => {
   return x - Math.floor(x);
 };
 
-export function createCrowd() {
+/** phone: en el celular hay menos espacio a los lados, así que se sientan más cerca de la pista. */
+export function createCrowd({ phone = false } = {}) {
   const people = [];
   let id = 0;
   for (const side of [-1, 1]) {
-    ROWS.forEach((u, r) => {
-      const n = r < 2 ? 4 : 3;
+    (phone ? ROWS.slice(0, 4) : ROWS).forEach((u, r) => {
+      const n = phone ? 2 : r < 2 ? 4 : 3;
       for (let c = 0; c < n; c++) {
         const h = hash(++id);
-        const x = side * (372 + c * 98 + (r % 2) * 46 + h * 14);
+        const x = phone ? side * (322 + c * 64 + (r % 2) * 30 + h * 8) : side * (372 + c * 98 + (r % 2) * 46 + h * 14);
         people.push({
           id, side, x, u: u + (hash(id + 9) - 0.5) * 24, x0: x,
           cloth: CLOTH[Math.floor(hash(id + 1) * CLOTH.length)],
@@ -31,7 +32,7 @@ export function createCrowd() {
           skin: SKIN[Math.floor(hash(id + 3) * SKIN.length)],
           bun: hash(id + 4) < 0.3,
           hat: hash(id + 5) < 0.08,
-          size: 0.92 + hash(id + 6) * 0.16,
+          size: (phone ? 0.8 : 0.92) + hash(id + 6) * 0.16,
           phase: hash(id + 7) * Math.PI * 2,
           clapper: hash(id + 8), // cuanto más bajo, antes empieza a aplaudir
           stand: 0, // 0 sentado … 1 de pie
