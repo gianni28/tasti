@@ -7,11 +7,20 @@ async function req(path, opts = {}) {
   if (!ONLINE) throw new Error("Sin conexión con la biblioteca");
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...opts,
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", ...(opts.headers || {}) },
+    headers: {
+      apikey: SUPABASE_KEY,
+      // las claves nuevas (sb_publishable_…) no son JWT y van solo en apikey; las anon viejas (eyJ…) también van como Bearer
+      ...(SUPABASE_KEY.startsWith("eyJ") ? { Authorization: `Bearer ${SUPABASE_KEY}` } : {}),
+      "Content-Type": "application/json",
+      ...(opts.headers || {}),
+    },
   });
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { message: text.slice(0, 200) }; }
   if (!res.ok) {
+    // tabla o función que no existe: falta correr el SQL en el proyecto
+    if (["PGRST202", "PGRST205", "42P01", "42883"].includes(data?.code)) throw new Error("La base de datos aún no está instalada: corre supabase/tasti.sql en el SQL Editor de Supabase.");
     const msg = data?.message || data?.hint || `Error ${res.status}`;
     throw new Error(msg);
   }
